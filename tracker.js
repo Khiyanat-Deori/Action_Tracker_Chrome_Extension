@@ -1,8 +1,25 @@
 (async () => {
+  if (window.__trackingInjected) {
+    console.warn("Tracking script already injected.");
+    return;
+  }
+  window.__trackingInjected = true;
+
   let trackingEnabled = false;
 
-  const clickHandler = (event) => recordAction(event, "click");
-  const inputHandler = (event) => handleTypingEvent(event);
+  function preActionCapture(event) {
+    event.preActionRawHtml = getRawHTMLSync();
+    event.preActionCleanedHtml = getCleanedHTMLSync();
+  }
+
+  const clickHandler = (event) => {
+    recordAction(event, "click");
+  };
+
+  const inputHandler = (event) => {
+    handleTypingEvent(event);
+  };
+
   const changeHandler = (event) => {
     if (event.target.tagName.toLowerCase() === "select") {
       recordAction(event, "select");
@@ -14,15 +31,20 @@
 
   async function recordAction(event, type) {
     if (!trackingEnabled) return;
+    const raw_html = event.preActionRawHtml || getRawHTMLSync();
+    const cleaned_html = event.preActionCleanedHtml || getCleanedHTMLSync();
+
     try {
-      let element = event.target;
-      let tagName = element.tagName.toLowerCase();
-      let label = element.getAttribute("placeholder") ||
-                  element.getAttribute("aria-label") ||
-                  element.getAttribute("alt") ||
-                  ((element.innerText || element.textContent || "")).trim();
+      const element = event.target;
+      const tagName = element.tagName.toLowerCase();
+      const displayTag = getFriendlyTag(element);
+
+      let label =
+        element.getAttribute("placeholder") ||
+        element.getAttribute("aria-label") ||
+        element.getAttribute("alt") ||
+        (element.innerText || element.textContent || "").trim();
       if (!label) label = "Search";
-      if (label === "Without label") return;
 
       let value = "";
       if (type === "type") {
@@ -31,39 +53,37 @@
         value = element.options[element.selectedIndex].text;
       }
 
-      let action = `[${tagName}] ${label} -> ${type.toUpperCase()}${value ? ": " + value : ""}`;
-      let raw_html = await getRawHTML();
-      let cleaned_html = await getCleanedHTML();
+      const action = `[${displayTag}] ${label} -> ${type.toUpperCase()}${value ? ": " + value : ""}`;
+      const op = type.toUpperCase();
+      const operation = { op, value: "", original_op: op };
 
-      let op = type.toUpperCase(); 
-      let operation = {
-        op: op,
-        value: "",
-        original_op: op
-      };
-
-      let pos_candidate = {
+      const pos_candidate = {
         tag: tagName,
         attributes: serializeAttributes(element),
         is_original_target: true,
-        is_top_level_target: true
+        is_top_level_target: true,
       };
 
-      let neg_candidates = Array.from(document.querySelectorAll(tagName))
-        .filter(el => el !== element)
-        .map(el => ({
+      const neg_candidates = Array.from(document.querySelectorAll(tagName))
+        .filter((el) => el !== element)
+        .map((el) => ({
           tag: el.tagName.toLowerCase(),
-          attributes: serializeAttributes(el)
+          attributes: serializeAttributes(el),
         }));
 
-      let actionData = {
+      const actionData = {
         action,
         raw_html,
         cleaned_html,
         operation,
         pos_candidate,
-        neg_candidates
+        neg_candidates,
       };
+
+      if (typeof saveAction !== "function") {
+        console.error("saveAction function is not available. Action not recorded.");
+        return;
+      }
 
       await saveAction(actionData);
       console.log("✅ Action recorded:", action);
@@ -82,19 +102,27 @@
 
   function addListeners() {
     if (document.readyState === "complete") {
-      document.addEventListener("click", clickHandler);
-      document.addEventListener("input", inputHandler);
-      document.addEventListener("change", changeHandler);
-      console.log("✅ Event listeners added");
+      document.addEventListener("click", preActionCapture, true);
+      document.addEventListener("input", preActionCapture, true);
+      document.addEventListener("change", preActionCapture, true);
+
+      document.addEventListener("click", clickHandler, true);
+      document.addEventListener("input", inputHandler, true);
+      document.addEventListener("change", changeHandler, true);
+      console.log("✅ Event listeners added (capture phase) with pre-action capture");
     } else {
       window.addEventListener("load", addListeners);
     }
   }
 
   function removeListeners() {
-    document.removeEventListener("click", clickHandler);
-    document.removeEventListener("input", inputHandler);
-    document.removeEventListener("change", changeHandler);
+    document.removeEventListener("click", preActionCapture, true);
+    document.removeEventListener("input", preActionCapture, true);
+    document.removeEventListener("change", preActionCapture, true);
+
+    document.removeEventListener("click", clickHandler, true);
+    document.removeEventListener("input", inputHandler, true);
+    document.removeEventListener("change", changeHandler, true);
     console.log("🚫 Event listeners removed");
   }
 
@@ -121,20 +149,56 @@
     }
   });
 
-  async function getRawHTML() {
-    return document.documentElement.outerHTML;
+  function getRawHTMLSync() {
+    const doctype = new XMLSerializer().serializeToString(document.doctype);
+    let htmlClone = document.documentElement.cloneNode(true);
+    Array.from(htmlClone.childNodes).forEach((child) => {
+      if (child.nodeType === Node.ELEMENT_NODE && child.tagName.toLowerCase() !== "body") {
+        child.remove();
+      }
+    });
+    return doctype + "\n" + htmlClone.outerHTML;
   }
 
-  async function getCleanedHTML() {
+  function getCleanedHTMLSync() {
     let clonedDoc = document.documentElement.cloneNode(true);
     let elementsToRemove = clonedDoc.querySelectorAll("script, style, iframe, noscript");
-    elementsToRemove.forEach(el => el.remove());
+    elementsToRemove.forEach((el) => el.remove());
+    removeComments(clonedDoc);
+    Array.from(clonedDoc.childNodes).forEach((child) => {
+      if (child.nodeType === Node.ELEMENT_NODE && child.tagName.toLowerCase() !== "body") {
+        child.remove();
+      }
+    });
     return clonedDoc.outerHTML;
+  }
+
+  function removeComments(node) {
+    for (let i = 0; i < node.childNodes.length; i++) {
+      let child = node.childNodes[i];
+      if (child.nodeType === Node.COMMENT_NODE) {
+        node.removeChild(child);
+        i--;
+      } else if (child.nodeType === Node.ELEMENT_NODE) {
+        removeComments(child);
+      }
+    }
+  }
+
+  function getFriendlyTag(element) {
+    const tagName = element.tagName.toLowerCase();
+    const role = element.getAttribute("role");
+    if (role) return role.toLowerCase();
+    if (tagName === "a" && element.getAttribute("href")) return "link";
+    if ((tagName === "input" || tagName === "button") && element.getAttribute("type")) {
+      return element.getAttribute("type").toLowerCase();
+    }
+    return tagName;
   }
 
   async function downloadJSON() {
     let actions = await getAllActions();
-    let action_reprs = actions.map(item => item.action);
+    let action_reprs = actions.map((item) => item.action);
     let data = { action_reprs, actions };
     let blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     let a = document.createElement("a");
