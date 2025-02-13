@@ -9,26 +9,31 @@
         }
     };
 
-    let typingTimer; 
-    const typingDelay = 1000; 
+    let typingTimer;
+    const typingDelay = 1000;
 
     async function recordAction(event, type) {
         if (!trackingEnabled) return;
         try {
             let element = event.target;
             let tagName = element.tagName.toLowerCase();
+
             let label = element.getAttribute('placeholder') ||
                         element.getAttribute('aria-label') ||
                         element.getAttribute('alt') ||
-                        element.innerText.trim();
+                        ((element.innerText || element.textContent || "")).trim();
 
-            if (!label || label === "Without label") return;
+            if (!label) {
+                label = "Search";
+            }
+
+            if (label === "Without label") return;
 
             let value = "";
             if (type === "type") {
-                value = element.value; 
+                value = element.value;
             } else if (type === "select" && tagName === "select") {
-                value = element.options[element.selectedIndex].text; 
+                value = element.options[element.selectedIndex].text;
             }
 
             let action = `[${tagName}] ${label} -> ${type.toUpperCase()}${value ? ": " + value : ""}`;
@@ -44,8 +49,8 @@
     }
 
     function handleTypingEvent(event) {
-        if (event.target.tagName.toLowerCase() === "input" ||
-            event.target.tagName.toLowerCase() === "textarea") {
+        const tag = event.target.tagName.toLowerCase();
+        if (tag === "input" || tag === "textarea") {
             clearTimeout(typingTimer);
             typingTimer = setTimeout(() => recordAction(event, "type"), typingDelay);
         }
@@ -122,7 +127,5 @@
 
     window.recordingTool = { downloadJSON, clearActions };
 })();
-
-
 
 
