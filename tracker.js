@@ -27,7 +27,20 @@
   };
 
   let typingTimer;
-  const typingDelay = 1000;
+  const typingDelay = 1500;
+
+  function getTopLevelTarget(element) {
+    let current = element;
+    while (current.parentElement) {
+      let parentTag = current.parentElement.tagName.toLowerCase();
+      if (parentTag === "a" || parentTag === "button") {
+        current = current.parentElement;
+      } else {
+        break;
+      }
+    }
+    return current;
+  }
 
   async function recordAction(event, type) {
     if (!trackingEnabled) return;
@@ -55,20 +68,32 @@
 
       const action = `[${displayTag}] ${label} -> ${type.toUpperCase()}${value ? ": " + value : ""}`;
       const op = type.toUpperCase();
-      const operation = { op, value: "", original_op: op };
+      const operation = { original_op: op, value: value, op };
+
+      const topLevelElement = getTopLevelTarget(element);
+      const isOriginal = (element === topLevelElement);
 
       const pos_candidate = {
         tag: tagName,
         attributes: serializeAttributes(element),
-        is_original_target: true,
-        is_top_level_target: true,
+        is_original_target: isOriginal,   
+        is_top_level_target: true            
       };
 
-      const neg_candidates = Array.from(document.querySelectorAll(tagName))
-        .filter((el) => el !== element)
-        .map((el) => ({
+      const tempContainer = document.createElement("div");
+      tempContainer.innerHTML = cleaned_html;
+      const posCandidateRep = {
+        tag: tagName,
+        attributes: serializeAttributes(element)
+      };
+      const neg_candidates = Array.from(tempContainer.querySelectorAll("*"))
+        .filter(el => {
+          return !(el.tagName.toLowerCase() === posCandidateRep.tag &&
+                   serializeAttributes(el) === posCandidateRep.attributes);
+        })
+        .map(el => ({
           tag: el.tagName.toLowerCase(),
-          attributes: serializeAttributes(el),
+          attributes: serializeAttributes(el)
         }));
 
       const actionData = {
@@ -201,7 +226,11 @@
     let actions = await getAllActions();
     let action_reprs = actions.map((item) => item.action);
     let data = { action_reprs, actions };
-    let blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    let jsonString = JSON.stringify(data, (key, value) => {
+      return key === "id" ? undefined : value;
+    }, 2);
+
+    let blob = new Blob([jsonString], { type: "application/json" });
     let a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = `user_actions_${Date.now()}.json`;
@@ -226,3 +255,5 @@
 
   window.recordingTool = { downloadJSON, clearActions };
 })();
+
+
