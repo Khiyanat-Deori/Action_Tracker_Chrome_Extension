@@ -193,7 +193,7 @@
     if ((tagName === "input" || tagName === "button") && element.getAttribute("type")) {
       return element.getAttribute("type").toLowerCase();
     }
-    if (tagName === "li" || tagName === "span" || tagName === "div") return "button";
+    if (tagName === "li") return "button";
     return tagName;
   }
 
