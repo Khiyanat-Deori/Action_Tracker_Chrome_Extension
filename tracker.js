@@ -7,6 +7,22 @@
 
   let trackingEnabled = false;
 
+  function isInteractive(element) {
+    const tag = element.tagName.toLowerCase();
+    const interactiveTags = ['a', 'button', 'input', 'select', 'textarea'];
+    if (interactiveTags.includes(tag)) return true;
+    
+    if (element.hasAttribute("tabindex")) return true;
+    
+    for (let attr of element.attributes) {
+      if (attr.name.startsWith("on") && attr.value.trim() !== "") {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
   function preActionCapture(event) {
     event.preActionRawHtml = getRawHTMLSync();
     event.preActionCleanedHtml = getCleanedHTMLSync();
@@ -31,13 +47,8 @@
 
   function getTopLevelTarget(element) {
     let current = element;
-    while (current.parentElement) {
-      let parentTag = current.parentElement.tagName.toLowerCase();
-      if (parentTag === "a" || parentTag === "button") {
-        current = current.parentElement;
-      } else {
-        break;
-      }
+    while (current.parentElement && isInteractive(current.parentElement)) {
+      current = current.parentElement;
     }
     return current;
   }
@@ -57,7 +68,7 @@
         element.getAttribute("aria-label") ||
         element.getAttribute("alt") ||
         (element.innerText || element.textContent || "").trim();
-      if (!label) label = "Search";
+      if (!label) label = "Without label";
 
       let value = "";
       if (type === "type") {
@@ -88,8 +99,9 @@
       };
       const neg_candidates = Array.from(tempContainer.querySelectorAll("*"))
         .filter(el => {
-          return !(el.tagName.toLowerCase() === posCandidateRep.tag &&
-                   serializeAttributes(el) === posCandidateRep.attributes);
+          return isInteractive(el) &&
+            !(el.tagName.toLowerCase() === posCandidateRep.tag &&
+              serializeAttributes(el) === posCandidateRep.attributes);
         })
         .map(el => ({
           tag: el.tagName.toLowerCase(),
@@ -211,14 +223,17 @@
   }
 
   function getFriendlyTag(element) {
-    const tagName = element.tagName.toLowerCase();
     const role = element.getAttribute("role");
     if (role) return role.toLowerCase();
-    if (tagName === "a" && element.getAttribute("href")) return "link";
-    if ((tagName === "input" || tagName === "button") && element.getAttribute("type")) {
-      return element.getAttribute("type").toLowerCase();
+
+    const tagName = element.tagName.toLowerCase();
+    if (tagName === "a" && element.getAttribute("href")) {
+      return "link";
     }
-    if (tagName === "li") return "button";
+
+    const typeAttr = element.getAttribute("type");
+    if (typeAttr) return typeAttr.toLowerCase();
+
     return tagName;
   }
 
@@ -255,5 +270,3 @@
 
   window.recordingTool = { downloadJSON, clearActions };
 })();
-
-
