@@ -1,4 +1,30 @@
 (async () => {
+  if (!window.__eventListenerMonkeyPatched) {
+    const originalAddEventListener = EventTarget.prototype.addEventListener;
+    EventTarget.prototype.addEventListener = function (type, listener, options) {
+      if (!this.__interactiveEvents) {
+        this.__interactiveEvents = new Set();
+      }
+      const interactiveEventTypes = [
+        "click",
+        "input",
+        "change",
+        "keydown",
+        "keyup",
+        "keypress",
+        "focus",
+        "blur",
+        "touchstart",
+        "touchend"
+      ];
+      if (interactiveEventTypes.includes(type)) {
+        this.__interactiveEvents.add(type);
+      }
+      return originalAddEventListener.call(this, type, listener, options);
+    };
+    window.__eventListenerMonkeyPatched = true;
+  }
+
   if (window.__trackingInjected) {
     console.warn("Tracking script already injected.");
     return;
@@ -8,18 +34,43 @@
   let trackingEnabled = false;
 
   function isInteractive(element) {
+    if (!element || !element.tagName) return false;
     const tag = element.tagName.toLowerCase();
-    const interactiveTags = ['a', 'button', 'input', 'select', 'textarea'];
+    const interactiveTags = ["a", "button", "input", "select", "textarea", "area", "details", "summary"];
     if (interactiveTags.includes(tag)) return true;
-    
-    if (element.hasAttribute("tabindex")) return true;
-    
-    for (let attr of element.attributes) {
-      if (attr.name.startsWith("on") && attr.value.trim() !== "") {
-        return true;
-      }
+    if ((tag === "video" || tag === "audio") && element.hasAttribute("controls")) return true;
+    const contentEditable = element.getAttribute("contenteditable");
+    if (contentEditable === "true" || contentEditable === "") return true;
+    if (element.hasAttribute("tabindex")) {
+      const tabindexVal = parseInt(element.getAttribute("tabindex"), 10);
+      if (!isNaN(tabindexVal) && tabindexVal >= 0) return true;
     }
-    
+    const interactiveRoles = ["button", "link", "checkbox", "menuitem", "menuitemcheckbox", "menuitemradio", "radio", "switch", "tab", "slider", "combobox", "spinbutton", "listbox", "textbox", "searchbox", "menu", "menubar", "treeitem", "option"];
+    const role = element.getAttribute("role");
+    if (role && interactiveRoles.includes(role.toLowerCase())) return true;
+    if (element.hasAttribute("aria-haspopup")) {
+      const ariaHasPopup = element.getAttribute("aria-haspopup");
+      if (ariaHasPopup !== "false") return true;
+    }
+    try {
+      const props = Object.getOwnPropertyNames(element);
+      for (const prop of props) {
+        if (prop.startsWith("on") && typeof element[prop] === "function") return true;
+      }
+    } catch (e) {}
+    for (const attr of element.attributes) {
+      if (attr.name.startsWith("on") && attr.value.trim() !== "") return true;
+    }
+    if (typeof getEventListeners === 'function') {
+      const listeners = getEventListeners(element);
+      if (Object.keys(listeners).length > 0) return true;
+    }
+    if (element.__interactiveEvents && element.__interactiveEvents.size > 0) return true;
+    try {
+      const computedStyle = window.getComputedStyle(element);
+      if (computedStyle && computedStyle.cursor === "pointer") return true;
+    } catch (e) {}
+    if (tag === "svg" || element.tagName.includes('-')) return true;
     return false;
   }
 
@@ -84,25 +135,19 @@
       const topLevelElement = getTopLevelTarget(element);
       const isOriginal = (element === topLevelElement);
 
+      element.setAttribute("data-pos-candidate", "true");
+
       const pos_candidate = {
         tag: tagName,
         attributes: serializeAttributes(element),
-        is_original_target: isOriginal,   
-        is_top_level_target: true            
+        is_original_target: isOriginal,
+        is_top_level_target: true
       };
 
       const tempContainer = document.createElement("div");
       tempContainer.innerHTML = cleaned_html;
-      const posCandidateRep = {
-        tag: tagName,
-        attributes: serializeAttributes(element)
-      };
       const neg_candidates = Array.from(tempContainer.querySelectorAll("*"))
-        .filter(el => {
-          return isInteractive(el) &&
-            !(el.tagName.toLowerCase() === posCandidateRep.tag &&
-              serializeAttributes(el) === posCandidateRep.attributes);
-        })
+        .filter(el => isInteractive(el) && el.getAttribute("data-pos-candidate") !== "true")
         .map(el => ({
           tag: el.tagName.toLowerCase(),
           attributes: serializeAttributes(el)
@@ -225,15 +270,12 @@
   function getFriendlyTag(element) {
     const role = element.getAttribute("role");
     if (role) return role.toLowerCase();
-
     const tagName = element.tagName.toLowerCase();
     if (tagName === "a" && element.getAttribute("href")) {
       return "link";
     }
-
     const typeAttr = element.getAttribute("type");
     if (typeAttr) return typeAttr.toLowerCase();
-
     return tagName;
   }
 
@@ -244,7 +286,6 @@
     let jsonString = JSON.stringify(data, (key, value) => {
       return key === "id" ? undefined : value;
     }, 2);
-
     let blob = new Blob([jsonString], { type: "application/json" });
     let a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -263,6 +304,7 @@
     let attrs = element.attributes;
     let serialized = {};
     for (let i = 0; i < attrs.length; i++) {
+      if (attrs[i].name === "data-pos-candidate") continue;
       serialized[attrs[i].name] = attrs[i].value;
     }
     return JSON.stringify(serialized);
@@ -270,3 +312,4 @@
 
   window.recordingTool = { downloadJSON, clearActions };
 })();
+
