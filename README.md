@@ -6,22 +6,22 @@ This dataset is designed to develop generalist web agents capable of following l
 
 ## Data Fields
 
-- "website" (str): website name
-- "domain" (str): website domain
-- "subdomain" (str): website subdomain
-- "confirmed_task" (str): task description
-- "action_reprs" (list[str]): human readable string representation of the action sequence
-- "actions" (list[dict]): list of actions (steps) to complete the task
-  - "action" (str): each action representation (step)
-  - "raw_html" (str): raw html of the page before the action is performed
-  - "cleaned_html" (str): cleaned html of the page before the action is performed
-  - "operation" (dict): operation to perform
-    - "original_op" (str): original operation type, contain additional HOVER and ENTER that are mapped to CLICK
-    - "value" (str): optional value for the operation, e.g., text to type, option to select
-    - "op" (str): operation type, one of CLICK, TYPE, SELECT
-  - "pos_candidate" (dict): ground truth element that represents the user action.
-    - "tag" (str): tag of the element
-    - "is_original_target" (bool): whether the element is the original target labeled by the annotator
-    - "is_top_level_target" (bool): whether the element is a top level target find by the algorithm
-  - "neg_candidates" (list[dict]): other interactive candidate elements in the page that has similar structure as "pos_candidate"
+- "website" (str): The name of the website where the user interaction was recorded.
+- "domain" (str): The primary domain of the website.
+- "subdomain" (str): A specific subdomain of the website.
+- "confirmed_task" (str): A brief description of the task the user was attempting to complete on the website.
+- "action_reprs" (list[str]): A list of human readable descriptions summarizing the sequence of user actions.
+- "actions" (list[dict]): A structured list of recorded user interactions, detailing the steps taken to complete the task.
+  - "action" (str): A representation of a single user action.
+  - "raw_html" (str): The original HTML source code of the webpage before the action took place.
+  - "cleaned_html" (str): A sanitized version of the HTML, with unnecessary elements removed.
+  - "operation" (dict): Details of the user interaction, specifying what action was performed and its associated metadata.
+    - "original_op" (str): The initial recorded operation type, which is mapped to standard actions like click.
+    - "value" (str): Any user-provided input value.
+    - "op" (str): The final categorized operation type, limited to CLICK, TYPE, or SELECT.
+  - "pos_candidate" (dict): The main HTML element that represents the user’s intended interaction.
+    - "tag" (str): The HTML tag of the target element.
+    - "is_original_target" (bool): Specifies whether the detected element is the highest-level interactive parent element for a given action.
+    - "is_top_level_target" (bool): Specifies if the detected target element is the actionable element in the page.
+  - "neg_candidates" (list[dict]): A list of other interactive elements on the page that share similar attributes to the identified target, used for comparison.
 
