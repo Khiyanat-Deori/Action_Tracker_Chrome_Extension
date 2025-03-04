@@ -118,6 +118,7 @@
         element.getAttribute("placeholder") ||
         element.getAttribute("aria-label") ||
         element.getAttribute("alt") ||
+        element.getAttribute("value") ||
         (element.innerText || element.textContent || "").trim();
       if (!label) label = "Without label";
 
